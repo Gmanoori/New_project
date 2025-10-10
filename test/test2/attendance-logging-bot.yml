@@ -1,0 +1,133 @@
+name: Attendance Logger Bot
+
+on:
+  push:
+    branches:
+      - master
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  attendance:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get comment timestamp
+        id: get_timestamp
+        env:
+          RAW_TIMESTAMP: ${{ github.event.comment.created_at }}
+        run: |
+          epoch_seconds=$(date -d "$RAW_TIMESTAMP" +%s)
+          ist_seconds=$((epoch_seconds + 19800))
+          ist_time=$(date -u -d "@$ist_seconds" "+%H:%M")
+          final_date=$(date -d "$RAW_TIMESTAMP" "+%d-%m-%Y")
+          echo "timestamp=$ist_time" >> $GITHUB_OUTPUT
+          echo "final_date=$final_date" >> $GITHUB_OUTPUT
+
+      - name: Check if comment contains /login or /logout
+        id: check_command
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body || '' }}
+          FULL_NAME: ${{ github.event.comment.user.login }}
+        run: |
+          full_name="$FULL_NAME"
+          first_name="${full_name%%-*}"
+          echo "first_name=$first_name" >> $GITHUB_OUTPUT
+          comment="$COMMENT_BODY"
+          if [[ "$comment" == *"/login"* ]]; then
+            echo "command=login" >> $GITHUB_OUTPUT
+          elif [[ "$comment" == *"/logout"* ]]; then
+            echo "command=logout" >> $GITHUB_OUTPUT
+          else
+            echo "command=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Post login comment
+        if: steps.check_command.outputs.command == 'login'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            Good Morning @${{ steps.check_command.outputs.first_name }}! :D Your login has been recorded at ${{ steps.get_timestamp.outputs.timestamp }} 
+
+      - name: Post logout comment
+        if: steps.check_command.outputs.command == 'logout'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            See You Tomorrow, @${{ steps.check_command.outputs.first_name }}! ;) Your logout has been recorded at ${{ steps.get_timestamp.outputs.timestamp }}. 
+
+      - name: Save login time
+        id: save_login
+        if: steps.check_command.outputs.command == 'login'
+        run: |
+          echo "${{ steps.check_command.outputs.first_name }}|${{ steps.get_timestamp.outputs.final_date }}|${{ steps.get_timestamp.outputs.timestamp }}" > test/login_time.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add test/login_time.txt
+          git commit -m "Save login time for ${{ steps.get_timestamp.outputs.final_date }}" || echo "No changes to commit"
+          git push
+
+      - name: Execute Python script with environment variable
+        env:
+          MY_VARIABLE: "Hello from GitHub Actions!"
+          LOGIN_TIME: ${{ steps.save_login.outputs.login_time }}
+          LOGOUT_TIME: ${{ steps.get_timestamp.outputs.timestamp }}
+          FIRST_NAME: ${{ steps.check_command.outputs.first_name }}
+          FINAL_DATE: ${{ steps.get_timestamp.outputs.final_date }}
+        run: python scripts/my_script.py
+
+#        run: |
+#          echo "login_time=${{ steps.get_timestamp.outputs.timestamp }}" >> $GITHUB_OUTPUT
+#          echo "Saved"
+
+      - name: Read login time from file
+        if: steps.check_command.outputs.command == 'logout'
+        env:
+          LOGIN_TIME: ${{ steps.save_login.outputs.login_time }}
+          LOGOUT_TIME: ${{ steps.get_timestamp.outputs.timestamp }}
+          FIRST_NAME: ${{ steps.check_command.outputs.first_name }}
+          FINAL_DATE: ${{ steps.get_timestamp.outputs.final_date }}
+        run: |
+          cat test/login_time.txt
+          IFS='|' read -r LOGIN_USER LOGIN_DATE LOGIN_TIME < test/login_time.txt
+          LOGOUT_TIME=${{ steps.get_timestamp.outputs.timestamp }}
+          diff_sec=$(( $(date -d "today $LOGOUT_TIME" +%s) - $(date -d "today $LOGIN_TIME" +%s) ))
+          work_hours=$(printf "%02d:%02d\n" $((diff_sec/3600)) $(((diff_sec%3600)/60)))
+          echo "| $FIRST_NAME | $FINAL_DATE | $LOGIN_TIME | $LOGOUT_TIME | $work_hours |" >> test/attendance.md
+          rm test/login_time.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add test/attendance.md
+          git commit -m "Added attendance for ${{ steps.get_timestamp.outputs.final_date }}" || echo "No changes to commit"
+          git push
+          git pull origin master
+
+
+#      - name: Write to attendance.md at logout
+#        if: steps.check_command.outputs.command == 'logout'
+#        env:
+#          LOGIN_TIME: ${{ steps.save_login.outputs.login_time }}
+#          LOGOUT_TIME: ${{ steps.get_timestamp.outputs.timestamp }}
+#          FIRST_NAME: ${{ steps.check_command.outputs.first_name }}
+#          FINAL_DATE: ${{ steps.get_timestamp.outputs.final_date }}
+#        run: |
+#          echo "$LOGIN_TIME"
+#          echo "${{ steps.save_login.outputs.login_time }}"
+#          echo "| $FIRST_NAME | $FINAL_DATE | $LOGIN_TIME | $LOGOUT_TIME |   |" >> test/attendance.md
+#          git config user.name "github-actions[bot]"
+#          git config user.email "github-actions[bot]@users.noreply.github.com"
+#          git add test/attendance.md
+#          git commit -m "Added attendance for ${{ steps.get_timestamp.outputs.final_date }}" || echo "No changes to commit"
+#          git push
+#          git pull origin master
+
+# to-do: variable in login. write at logout
