@@ -111,6 +111,7 @@ jobs:
           git push
           git pull origin master
 
+Hi, changes in 2 directory
 
 #      - name: Write to attendance.md at logout
 #        if: steps.check_command.outputs.command == 'logout'
