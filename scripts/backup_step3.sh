@@ -29,7 +29,10 @@ else
 fi
 
 echo "Hi, checking archive for previous date: $date"
-source_path=../$1
+
+sleep 2
+
+source_path=../$1 
 zip_format=$2
 change_file=../backup/$today_date/changes.txt
 log_file=../backup/logger.txt
@@ -52,6 +55,7 @@ elif [ ! -f "$backup_file" ]; then
 fi
 
 echo "Found backup file. Unzipping for comparison..."
+sleep 2
 if ! unzip -q "$backup_file" -d "$temp_dir"; then
     echo "Error: Failed to unzip backup file $backup_file"
     rm -rf "$temp_dir"  # Clean up temp dir
@@ -64,15 +68,17 @@ echo "Successfully unzipped backup."
 # Get the source directory name
 source_dir_name=$(basename "$source_path")
 echo "Comparing latest directory with backup for: $date"
+sleep 2
 
 # Perform the comparison
 # Only capture content differences in change_file, redirect errors to null
+  mkdir -p "../backup/$today_date"
+  touch $change_file
 if diff -r "$source_path" "$temp_dir/$source_dir_name" > "$change_file" 2>/dev/null; then
   echo "Files are identical. Skipping backup"
   rm -f "$change_file"  # Remove change file if no differences
 else
   echo "Files differ for latest directory and backup for $date. Taking backup for $today_date"
-  mkdir -p "../backup/$today_date"
   zip -r "../backup/$today_date/backup.$zip_format" "$source_path"
   echo "$(date '+%Y-%m-%d %H:%M:%S') - Backup taken due to changes detected" >> "$log_file"
   echo "Changelog updated at $log_file"
